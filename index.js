@@ -181,7 +181,7 @@ for (const file of files) {
 				{
 					ACL: 'public-read',
 					Body: image,
-					Bucket: 'my-bucket',
+					Bucket: process.env.S3_BUCKET,
 					Key,
 				},
 			).promise();
