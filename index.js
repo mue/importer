@@ -1,4 +1,6 @@
 import { config } from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
+import AWS from 'aws-sdk';
 import gradient from 'gradient-string';
 import figlet from 'figlet';
 import { program } from 'commander';
@@ -10,11 +12,22 @@ import fetch from 'node-fetch';
 import csv from 'convert-csv-to-json';
 import ProgressBar from 'progress';
 import { resolve } from 'path';
+import { createHash } from 'crypto';
 import sharp from 'sharp';
 import piexif from 'piexifjs';
-import { createHash } from 'crypto';
 
 config();
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET);
+const s3 = new AWS.S3({
+	credentials: {
+		accessKeyId: process.env.S3_ACCESS,
+		secretAccessKey: process.env.S3_SECRET,
+	},
+	endpoint: process.env.S3_ENDPOINT,
+	s3ForcePathStyle: true,
+	signatureVersion: 'v4',
+});
 
 console.log(gradient('#ffb032', '#dd3b67').multiline(figlet.textSync('Mue Importer', {})));
 
@@ -94,15 +107,17 @@ if (!fs.existsSync('android.json')) {
 }
 
 const android = JSON.parse(await fsp.readFile('android.json'));
-
+const gpsCache = new Map();
 const bar = new ProgressBar(':bar :id (:file) :current/:total (:percent) - :elapsed/:eta, :rate/s', { total: files.length });
 
+files:
 for (const file of files) {
-	const buffer = await fsp.readFile(resolve('import', file));
+	const path = resolve('import', file);
+	let buffer = await fsp.readFile(path);
 	const binary = buffer.toString('binary');
 	const exif = piexif.load(binary);
-	const image = Buffer.from(piexif.remove(binary), 'binary'); // same as `buffer` but without metadata
-	const checksum = createHash('md5').update(image).digest('hex'); // checksum of the **meta-stripped** file
+	buffer = Buffer.from(piexif.remove(binary), 'binary'); // same as `buffer` but without metadata
+	const checksum = createHash('md5').update(buffer).digest('hex'); // checksum of the **meta-stripped** file
 
 	bar.tick({
 		file,
@@ -138,27 +153,51 @@ for (const file of files) {
 		const decimalLatitude = (latitudeRef === 'N' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(latitude).toFixed(1);
 		const decimalLongitude = (longitudeRef === 'E' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(longitude).toFixed(1);
 		data.locationData = `${decimalLatitude},${decimalLongitude}`;
-		try {
-			const res = await fetch(`https://proxy.muetab.com/weather/autolocation?lat=${decimalLatitude}&lon=${decimalLongitude}`);
-			const json = await res.json();
-			if (json[0]) data.locationName = `${json[0].name}, ${json[0].state}`;
-		} catch {
-			console.log(colours.redBright(`Failed to fetch location data for ${file}`));
+
+		if (gpsCache.has(data.locationData)) {
+			data.locationName = gpsCache.get(data.locationData);
+		} else {
+			try {
+				const res = await fetch(`https://proxy.muetab.com/weather/autolocation?lat=${decimalLatitude}&lon=${decimalLongitude}`);
+				const json = await res.json();
+				if (json[0]) data.locationName = `${json[0].name}, ${json[0].state}`;
+			} catch {
+				console.log(colours.redBright(`Failed to fetch location data for ${file}`));
+			}
 		}
 	}
 
-	// for await (const variant of variants) {
-	// 	let wip = sharp(image);
-	// 	if (variant.resolution) wip = wip.resize(variant.resolution[0], variant.resolution[1]);
-	// 	wip = wip.toFormat(variant.format, {
-	// 		effort: 6,
-	// 		quality: 85,
-	// 	});
-	// 	wip = wip.toBuffer();
-	// 	// TODO: upload
-	// }
+	for await (const variant of variants) {
+		let image = sharp(buffer);
+		if (variant.resolution) image = image.resize(variant.resolution[0], variant.resolution[1]);
+		image = image.toFormat(variant.format, {
+			effort: 6,
+			quality: 85,
+		});
+		image = await image.toBuffer();
+		const Key = `img/${variant.name}/${checksum}.${variant.format}`;
+		try {
+			await s3.upload(
+				{
+					ACL: 'public-read',
+					Body: image,
+					Bucket: 'my-bucket',
+					Key,
+				},
+			).promise();
+		} catch (error) {
+			console.log(colours.redBright(`Failed to upload "${Key}":`));
+			console.log(error);
+			continue files; // don't add to database if a variant fails to upload
+		}
+	}
 
-	// TODO: after successful uploads, save to database
+	try {
+		await supabase.from('images').upsert(data);
+		fsp.unlink(path);
+	} catch (error) {
+		console.log(colours.redBright(`Failed to upsert "${checksum}" (${file}):`));
+		console.log(error);
+	}
 
-	// TODO: unlink file
 }
