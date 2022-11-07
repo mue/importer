@@ -13,7 +13,7 @@ import { createHash } from 'crypto';
 config();
 
 program
-	.option('-c', '--category <name>', 'image category')
+	.option('-c, --category <name>', 'image category', 'outdoors')
 	.option('-l, --location <name>', 'fallback location name (if not in EXIF)')
 	.option('-p, --photographer <name>', 'fallback photographer name (if not in EXIF)');
 program.parse(process.argv);
@@ -86,7 +86,7 @@ for (const file of files) {
 
 	const data = {
 		camera: null,
-		category: options.category,
+		category: options.category?.toLowerCase(),
 		createdAt: exif.Exif[piexif.ExifIFD.DateTimeOriginal],
 		id: checksum,
 		locationData: null,
