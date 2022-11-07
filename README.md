@@ -14,7 +14,7 @@ SUPABASE_SECRET=
 Copy the photos to upload to the `import` directory, then
 
 ```
-node . -p <fallback photographer name> -l <fallback location name>
+node . -p <photographer name> -l <fallback location name>
 ```
 
 > **Warning**

@@ -1,7 +1,11 @@
 import { config } from 'dotenv';
+import gradient from 'gradient-string';
+import figlet from 'figlet';
 import { program } from 'commander';
 import { colours } from 'leeks.js';
 import fs, { promises as fsp } from 'fs';
+import inquirer from 'inquirer';
+import ora from 'ora';
 import fetch from 'node-fetch';
 import csv from 'convert-csv-to-json';
 import ProgressBar from 'progress';
@@ -12,41 +16,26 @@ import { createHash } from 'crypto';
 
 config();
 
+console.log(gradient('#ffb032', '#dd3b67').multiline(figlet.textSync('Mue Importer', {})));
+
 program
 	.option('-c, --category <name>', 'image category', 'outdoors')
 	.option('-l, --location <name>', 'fallback location name (if not in EXIF)')
-	.option('-p, --photographer <name>', 'fallback photographer name (if not in EXIF)');
+	.option('-p, --photographer <name>', 'photographer name');
 program.parse(process.argv);
 const options = program.opts();
 
-if (!options.photographer) console.log(colours.yellowBright('Warning: continuing without a fallback photographer'));
-else console.log(colours.greenBright(`Fallback photographer: ${options.photographer}`));
+console.log(colours.greenBright(`Category: ${options.category}`));
 
-if (!options.location) console.log(colours.yellowBright('Warning: continuing without a fallback location'));
+if (!options.location) console.log(colours.yellowBright('Warning: no fallback location'));
 else console.log(colours.greenBright(`Fallback location: ${options.location}`));
 
-if (!fs.existsSync('android.json')) {
-	console.log('Downloading supported_devices.json');
-	const res = await fetch('https://storage.googleapis.com/play_public/supported_devices.csv');
-	const fileStream = fs.createWriteStream('supported_devices.csv');
-	await new Promise((resolve, reject) => {
-		res.body.pipe(fileStream);
-		res.body.on('error', reject);
-		fileStream.on('finish', resolve);
-	});
-	csv.fieldDelimiter(',').ucs2Encoding().generateJsonFileFromCsv('supported_devices.csv', 'supported_devices.json');
-	fsp.unlink('supported_devices.csv');
-	console.log('Processing android.json...');
-	let json = JSON.parse(await fsp.readFile('supported_devices.json', { encoding: 'utf8' }));
-	json = json.reduce((json, data) => {
-		json[data.Model] = data.MarketingName.startsWith(data.RetailBranding) ? data.MarketingName : data.RetailBranding + ' ' + (data.MarketingName || data.Model);
-		return json;
-	}, {});
-	await fsp.writeFile('android.json', JSON.stringify(json), 'utf8');
-	await fsp.unlink('supported_devices.json');
+if (!options.photographer) {
+	console.log(colours.redBright('Error: no photographer'));
+	process.exit(1);
+} else {
+	console.log(colours.greenBright(`Photographer: ${options.photographer}`));
 }
-
-const android = JSON.parse(await fsp.readFile('android.json'));
 
 const resolutions = {
 	hd: [null, 720],
@@ -70,6 +59,42 @@ console.log(colours.blueBright(`Variants: ${variants.length}`));
 const files = (await fsp.readdir('import', { withFileTypes: true }))
 	.filter(file => !file.isDirectory() && !file.name.startsWith('.'))
 	.map(file => file.name);
+
+const { start } = await inquirer.prompt([{
+	default: !!options.photographer,
+	message: `Do you want to continue with ${files.length} files?`,
+	name: 'start',
+	type: 'confirm',
+}]);
+
+if (!start) {
+	console.log(colours.redBright('Canceled.'));
+	process.exit(1);
+}
+
+if (!fs.existsSync('android.json')) {
+	const spinner1 = ora('Downloading supported_devices.csv').start();
+	const res = await fetch('https://storage.googleapis.com/play_public/supported_devices.csv');
+	const fileStream = fs.createWriteStream('supported_devices.csv');
+	await new Promise((resolve, reject) => {
+		res.body.pipe(fileStream);
+		res.body.on('error', reject);
+		fileStream.on('finish', resolve);
+	});
+	spinner1.succeed('Downloaded supported_devices.csv');
+	const spinner2 = ora('Processing android.json').start();
+	let json = csv.fieldDelimiter(',').ucs2Encoding().getJsonFromCsv('supported_devices.csv');
+	await fsp.unlink('supported_devices.csv');
+	json = json.reduce((json, data) => {
+		json[data.Model] = data.MarketingName.startsWith(data.RetailBranding) ? data.MarketingName : data.RetailBranding + ' ' + (data.MarketingName || data.Model);
+		return json;
+	}, {});
+	await fsp.writeFile('android.json', JSON.stringify(json), 'utf8');
+	spinner2.succeed('Processed android.json');
+}
+
+const android = JSON.parse(await fsp.readFile('android.json'));
+
 const bar = new ProgressBar(':bar :id (:file) :current/:total (:percent) - :elapsed/:eta, :rate/s', { total: files.length });
 
 for (const file of files) {
@@ -121,8 +146,6 @@ for (const file of files) {
 			console.log(colours.redBright(`Failed to fetch location data for ${file}`));
 		}
 	}
-
-	console.log(data);
 
 	// for await (const variant of variants) {
 	// 	let wip = sharp(image);
