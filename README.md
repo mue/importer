@@ -1,6 +1,15 @@
 # importer
 
-## Environment
+> **Note**
+>
+> This is a tool for use by the Mue team.
+> If you want to add your photos to Mue, please [contact us](https://muetab.com/contact).
+
+## Installation
+
+Clone the repository and run `pnpm i`.
+
+### Environment
 
 ```
 S3_ACCESS=
@@ -13,11 +22,33 @@ SUPABASE_SECRET=
 
 ## Usage
 
-Copy the photos to upload to the `import` directory, then
+```
+Usage: importer [options]
 
+Options:
+  -c, --category <name>      image category (default: "outdoors")
+  -l, --location <name>      fallback location name (if not in EXIF)
+  -p, --photographer <name>  photographer name
+  -h, --help                 display help for command
 ```
-node . -p <photographer name> -l <fallback location name>
-```
+
+You must sort the images you want to import into photo sets.
+You can only upload one photo set at a time.
+
+A photo set is a group of photos:
+
+- taken by the same photographer
+- of the same category
+- taken in roughly the same area (same country at least)
+
+### Photo requirements
+
+Photos must:
+
+- look good
+- not be very blurry or out of focus 
+- not be very similar to an existing image
+- not be of people
 
 > **Warning**
 >
@@ -27,10 +58,4 @@ node . -p <photographer name> -l <fallback location name>
 
 ```
 node . -p "Isaac Saunders" -l "England"
-```
-
-Image URLs look like:
-
-```
-https://cdn.muetab.com/img/fhd/6ab5de7b5b878d235193f15beaf615c8.webp
 ```

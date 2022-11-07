@@ -7,27 +7,16 @@ import { program } from 'commander';
 import { colours } from 'leeks.js';
 import fs, { promises as fsp } from 'fs';
 import inquirer from 'inquirer';
-import ora from 'ora';
+import Spinnies from 'spinnies';
 import fetch from 'node-fetch';
 import csv from 'convert-csv-to-json';
-import ProgressBar from 'progress';
 import { resolve } from 'path';
+import ms from 'ms';
 import { createHash } from 'crypto';
 import sharp from 'sharp';
 import piexif from 'piexifjs';
 
 config();
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET);
-const s3 = new AWS.S3({
-	credentials: {
-		accessKeyId: process.env.S3_ACCESS,
-		secretAccessKey: process.env.S3_SECRET,
-	},
-	endpoint: process.env.S3_ENDPOINT,
-	s3ForcePathStyle: true,
-	signatureVersion: 'v4',
-});
 
 console.log(gradient('#ffb032', '#dd3b67').multiline(figlet.textSync('Mue Importer', {})));
 
@@ -49,6 +38,17 @@ if (!options.photographer) {
 } else {
 	console.log(colours.greenBright(`Photographer: ${options.photographer}`));
 }
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET);
+const s3 = new AWS.S3({
+	credentials: {
+		accessKeyId: process.env.S3_ACCESS,
+		secretAccessKey: process.env.S3_SECRET,
+	},
+	endpoint: process.env.S3_ENDPOINT,
+	s3ForcePathStyle: true,
+	signatureVersion: 'v4',
+});
 
 const resolutions = {
 	hd: [null, 720],
@@ -85,8 +85,15 @@ if (!start) {
 	process.exit(1);
 }
 
+const spin = new Spinnies({
+	spinner: {
+		frames: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+		interval: 80,
+	},
+});
+
 if (!fs.existsSync('android.json')) {
-	const spinner1 = ora('Downloading supported_devices.csv').start();
+	spin.add('android1', { text: 'Downloading supported_devices.csv' });
 	const res = await fetch('https://storage.googleapis.com/play_public/supported_devices.csv');
 	const fileStream = fs.createWriteStream('supported_devices.csv');
 	await new Promise((resolve, reject) => {
@@ -94,8 +101,8 @@ if (!fs.existsSync('android.json')) {
 		res.body.on('error', reject);
 		fileStream.on('finish', resolve);
 	});
-	spinner1.succeed('Downloaded supported_devices.csv');
-	const spinner2 = ora('Processing android.json').start();
+	spin.succeed('android1', { text: 'Downloaded supported_devices.csv' });
+	spin.add('android2', { text: 'Processing android.json' });
 	let json = csv.fieldDelimiter(',').ucs2Encoding().getJsonFromCsv('supported_devices.csv');
 	await fsp.unlink('supported_devices.csv');
 	json = json.reduce((json, data) => {
@@ -103,27 +110,27 @@ if (!fs.existsSync('android.json')) {
 		return json;
 	}, {});
 	await fsp.writeFile('android.json', JSON.stringify(json), 'utf8');
-	spinner2.succeed('Processed android.json');
+	spin.succeed('android2', { text: 'Downloaded android.json' });
 }
 
 const android = JSON.parse(await fsp.readFile('android.json'));
 const gpsCache = new Map();
-const bar = new ProgressBar(':bar :id (:file) :current/:total (:percent) - :elapsed/:eta, :rate/s', { total: files.length });
+const startTime = Date.now();
+let count = 0;
+spin.add('main', { text: 'Importing images' });
+const spinInterval = setInterval(() => {
+	spin.update('main', { text: `Importing images (${count}/${files.length}, ${((count / files.length) * 100).toFixed(2)}%) ${ms(Date.now() - startTime)}` });
+}, 1000);
 
 files:
 for (const file of files) {
+	spin.add('main.1', { text: `Reading ${file}` });
 	const path = resolve('import', file);
 	let buffer = await fsp.readFile(path);
 	const binary = buffer.toString('binary');
 	const exif = piexif.load(binary);
 	buffer = Buffer.from(piexif.remove(binary), 'binary'); // same as `buffer` but without metadata
 	const checksum = createHash('md5').update(buffer).digest('hex'); // checksum of the **meta-stripped** file
-
-	bar.tick({
-		file,
-		id: checksum,
-	});
-
 	const data = {
 		camera: null,
 		category: options.category?.toLowerCase(),
@@ -157,17 +164,26 @@ for (const file of files) {
 		if (gpsCache.has(data.locationData)) {
 			data.locationName = gpsCache.get(data.locationData);
 		} else {
+			spin.add('main.2', { text: `Fetching location of ${file}` });
 			try {
 				const res = await fetch(`https://proxy.muetab.com/weather/autolocation?lat=${decimalLatitude}&lon=${decimalLongitude}`);
 				const json = await res.json();
 				if (json[0]) data.locationName = `${json[0].name}, ${json[0].state}`;
+				spin.succeed('main.2');
 			} catch {
-				console.log(colours.redBright(`Failed to fetch location data for ${file}`));
+				spin.fail('main.2');
 			}
 		}
 	}
 
+	let v = 0;
+	spin.add('main.1', { text: `Creating ${file} variants` });
+
 	for await (const variant of variants) {
+		v++;
+		spin.update('main.1', { text: `Creating ${file} variants (${v}/${variants.length})` });
+		const Key = `img/${variant.name}/${checksum}.${variant.format}`;
+		spin.add('main.3', { text: `Generating ${Key}` });
 		let image = sharp(buffer);
 		if (variant.resolution) image = image.resize(variant.resolution[0], variant.resolution[1]);
 		image = image.toFormat(variant.format, {
@@ -175,7 +191,7 @@ for (const file of files) {
 			quality: 85,
 		});
 		image = await image.toBuffer();
-		const Key = `img/${variant.name}/${checksum}.${variant.format}`;
+		spin.update('main.3', { text: `Uploading ${Key}` });
 		try {
 			await s3.upload(
 				{
@@ -185,19 +201,24 @@ for (const file of files) {
 					Key,
 				},
 			).promise();
+			spin.succeed('main.3');
 		} catch (error) {
-			console.log(colours.redBright(`Failed to upload "${Key}":`));
-			console.log(error);
+			spin.fail('main.3');
 			continue files; // don't add to database if a variant fails to upload
 		}
 	}
 
 	try {
+		spin.update('main.1', { text: `Upserting ${file} into database` });
 		await supabase.from('images').upsert(data);
+		spin.succeed('main.1');
 		fsp.unlink(path);
 	} catch (error) {
-		console.log(colours.redBright(`Failed to upsert "${checksum}" (${file}):`));
-		console.log(error);
+		spin.fail('main.1');
 	}
 
+	count++;
 }
+
+clearInterval(spinInterval);
+spin.succeed('main', { text: `Importing images (${files.length}/${files.length}, 100.00%) ${ms(Date.now() - startTime)}` });
