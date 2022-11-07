@@ -46,6 +46,8 @@ A photo set is a group of photos:
 Photos must:
 
 - look good
+- be landscape
+- be at least 1080p
 - not be very blurry or out of focus 
 - not be very similar to an existing image
 - not be of people
