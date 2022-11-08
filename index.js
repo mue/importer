@@ -13,8 +13,9 @@ import csv from 'convert-csv-to-json';
 import { resolve } from 'path';
 import ms from 'ms';
 import { createHash } from 'crypto';
-import sharp from 'sharp';
 import piexif from 'piexifjs';
+import sharp from 'sharp';
+import prettyBytes from 'pretty-bytes';
 
 config();
 
@@ -56,18 +57,11 @@ const resolutions = {
 	qhd: [null, 1440],
 	original: null, // eslint-disable-line sort-keys
 };
-const formats = ['webp', 'avif'];
+const formats = ['avif', 'webp'];
+const rc = Object.keys(resolutions).length;
+const fc = formats.length;
 
-const variants = Object.entries(resolutions)
-	.map(([k, v]) =>
-		formats.map(format => ({
-			format,
-			name: k,
-			resolution: v,
-		})))
-	.flat();
-
-console.log(colours.blueBright(`Variants: ${variants.length}`));
+console.log(colours.blueBright(`Variants: ${rc * fc} (${rc} resolutions, ${fc} formats)`));
 
 const files = (await fsp.readdir('import', { withFileTypes: true }))
 	.filter(file => !file.isDirectory() && !file.name.startsWith('.'))
@@ -124,7 +118,7 @@ const spinInterval = setInterval(() => {
 
 files:
 for (const file of files) {
-	spin.add('main.1', { text: `Reading ${file}` });
+	spin.add('files', { text: `Reading ${file}` });
 	const path = resolve('import', file);
 	let buffer = await fsp.readFile(path);
 	const binary = buffer.toString('binary');
@@ -165,57 +159,59 @@ for (const file of files) {
 		if (gpsCache.has(data.locationData)) {
 			data.locationName = gpsCache.get(data.locationData);
 		} else {
-			spin.add('main.2', { text: `Fetching location of ${file}` });
+			spin.add('file', { text: `Fetching location of ${file}` });
 			try {
 				const res = await fetch(`https://proxy.muetab.com/weather/autolocation?lat=${decimalLatitude}&lon=${decimalLongitude}`);
 				const json = await res.json();
 				if (json[0]) data.locationName = `${json[0].name}, ${json[0].state}`;
-				spin.succeed('main.2');
+				spin.succeed('file');
 			} catch {
-				spin.fail('main.2');
+				spin.fail('file');
 			}
 		}
 	}
 
-	let v = 0;
-	spin.add('main.1', { text: `Creating ${file} variants` });
+	spin.update('files', { text: `Processing ${file}` });
+	spin.add('file', { text: `Creating ${file} variants` });
 
-	for await (const variant of variants) {
-		v++;
-		spin.update('main.1', { text: `Creating ${file} variants (${v}/${variants.length})` });
-		const Key = `img/${variant.name}/${checksum}.${variant.format}`;
-		spin.add('main.3', { text: `Generating ${Key}` });
-		let image = sharp(buffer);
-		if (variant.resolution) image = image.resize(variant.resolution[0], variant.resolution[1]);
-		image = image.toFormat(variant.format, {
-			effort: 6,
-			quality: 85,
-		});
-		image = await image.toBuffer();
-		spin.update('main.3', { text: `Uploading ${Key}` });
+	const variants = {};
+
+	for (const format of formats) {
+		spin.update('file', { text: `Encoding ${file} to ${format.toUpperCase()}` });
+		const encoded = await sharp(buffer).toFormat(format).toBuffer();
+		for (const [name, dimensions] of Object.entries(resolutions)) {
+			spin.update('file', { text: `Resizing ${file} (${format.toUpperCase() }) to ${name.toUpperCase()}` });
+			let buffer = encoded;
+			if (dimensions) buffer = await sharp(encoded).resize(dimensions[0], dimensions[1]).toBuffer();
+			variants[`img/${name}/${checksum}.${format}`] = buffer;
+		}
+	}
+
+	for (const variant in variants) {
+		spin.update('file', { text: `Uploading ${variant} (${prettyBytes(Buffer.byteLength(variants[variant]))})` });
 		try {
 			await s3.upload(
 				{
 					ACL: 'public-read',
-					Body: image,
+					Body: variants[variant],
 					Bucket: process.env.S3_BUCKET,
-					Key,
+					Key: variant,
 				},
 			).promise();
-			spin.succeed('main.3');
 		} catch (error) {
-			spin.fail('main.3');
+			spin.fail('file', { text: spin.pick('file').text + ':\n' + error });
 			continue files; // don't add to database if a variant fails to upload
 		}
 	}
 
 	try {
-		spin.update('main.1', { text: `Upserting ${file} into database` });
+		spin.update('file', { text: `Upserting ${file} into database` });
 		await supabase.from('images').upsert(data);
-		spin.succeed('main.1');
+		spin.succeed('file');
 		fsp.unlink(path);
+		spin.succeed('files');
 	} catch (error) {
-		spin.fail('main.1');
+		spin.fail('file', { text: spin.pick('file').text + ':\n' + error });
 	}
 
 	count++;
@@ -223,3 +219,4 @@ for (const file of files) {
 
 clearInterval(spinInterval);
 spin.succeed('main', { text: `Importing images (${files.length}/${files.length}, 100.00%) ${ms(Date.now() - startTime)}` });
+spin.stopAll();
