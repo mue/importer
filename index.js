@@ -138,6 +138,7 @@ for (const file of files) {
 		id: checksum,
 		locationData: null,
 		locationName: options.location,
+		originalFileName: file,
 		photographer: options.photographer,
 	};
 
