@@ -128,11 +128,11 @@ for (const file of files) {
 	const data = {
 		camera: null,
 		category: options.category?.toLowerCase(),
-		createdAt: exif.Exif[piexif.ExifIFD.DateTimeOriginal],
+		created_at: exif.Exif[piexif.ExifIFD.DateTimeOriginal],
 		id: checksum,
-		locationData: null,
-		locationName: options.location,
-		originalFileName: file,
+		location_data: null,
+		location_name: options.location,
+		original_file_name: file,
 		photographer: options.photographer,
 	};
 
@@ -161,7 +161,7 @@ for (const file of files) {
 		} else {
 			spin.add('file', { text: `Fetching location of ${file}` });
 			try {
-				const res = await fetch(`https://proxy.muetab.com/weather/autolocation?lat=${decimalLatitude}&lon=${decimalLongitude}`);
+				const res = await fetch(`https://api.muetab.com/v2/gps?lat=${decimalLatitude}&lon=${decimalLongitude}`);
 				const json = await res.json();
 				if (json[0]) data.locationName = `${json[0].name}, ${json[0].state}`;
 				spin.succeed('file');
