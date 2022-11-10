@@ -22,7 +22,7 @@ config();
 console.log(gradient('#ffb032', '#dd3b67').multiline(figlet.textSync('Mue Importer', {})));
 
 program
-	.option('-c, --category <name>', 'image category', 'outdoors')
+	.option('-c, --category <name>', 'image category', 'landscapes')
 	.option('-l, --location <name>', 'fallback location name (if not in EXIF)')
 	.option('-p, --photographer <name>', 'photographer name');
 program.parse(process.argv);
