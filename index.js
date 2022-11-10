@@ -139,10 +139,10 @@ for (const file of files) {
 	if (exif['0th'][piexif.ImageIFD.Model] && android[data.camera]) data.camera = exif['0th'][piexif.ImageIFD.Model];
 	else data.camera = exif['0th'][piexif.ImageIFD.Model];
 
-	if (data.createdAt) {
+	if (data.created_at) {
 		const regex = /(?<year>\d{4}):(?<month>\d{2}):(?<day>\d{2})\s(?<time>\d{2}:\d{2}:\d{2})/;
-		const { groups } = regex.exec(data.createdAt);
-		if (groups) data.createdAt = new Date(`${groups.year}-${groups.month}-${groups.day}T${groups.time}`);
+		const { groups } = regex.exec(data.created_at);
+		if (groups) data.created_at = new Date(`${groups.year}-${groups.month}-${groups.day}T${groups.time}`);
 	}
 
 	const latitude = exif.GPS[piexif.GPSIFD.GPSLatitude];
@@ -154,16 +154,16 @@ for (const file of files) {
 		// convert & reduce precision
 		const decimalLatitude = (latitudeRef === 'N' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(latitude).toFixed(1);
 		const decimalLongitude = (longitudeRef === 'E' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(longitude).toFixed(1);
-		data.locationData = `${decimalLatitude},${decimalLongitude}`;
+		data.location_data = `${decimalLatitude},${decimalLongitude}`;
 
-		if (gpsCache.has(data.locationData)) {
-			data.locationName = gpsCache.get(data.locationData);
+		if (gpsCache.has(data.location_data)) {
+			data.location_name = gpsCache.get(data.location_data);
 		} else {
 			spin.add('file', { text: `Fetching location of ${file}` });
 			try {
 				const res = await fetch(`https://api.muetab.com/v2/gps?lat=${decimalLatitude}&lon=${decimalLongitude}`);
 				const json = await res.json();
-				if (json[0]) data.locationName = `${json[0].name}, ${json[0].state}`;
+				if (json[0]) data.location_name = `${json[0].name}, ${json[0].state}`;
 				spin.succeed('file');
 			} catch {
 				spin.fail('file');
@@ -206,7 +206,8 @@ for (const file of files) {
 
 	try {
 		spin.update('file', { text: `Upserting ${file} into database` });
-		await supabase.from('images').upsert(data);
+		const { error } = await supabase.from('images').upsert(data);
+		if (error) throw error;
 		spin.succeed('file');
 		fsp.unlink(path);
 		spin.succeed('files');
