@@ -21,25 +21,6 @@ config();
 
 console.log(gradient('#ffb032', '#dd3b67').multiline(figlet.textSync('Mue Importer', {})));
 
-program
-	.option('-c, --category <name>', 'image category', 'landscapes')
-	.option('-l, --location <name>', 'fallback location name (if not in EXIF)')
-	.option('-p, --photographer <name>', 'photographer name');
-program.parse(process.argv);
-const options = program.opts();
-
-console.log(colours.greenBright(`Category: ${options.category}`));
-
-if (!options.location) console.log(colours.yellowBright('Warning: no fallback location'));
-else console.log(colours.greenBright(`Fallback location: ${options.location}`));
-
-if (!options.photographer) {
-	console.log(colours.redBright('Error: no photographer'));
-	process.exit(1);
-} else {
-	console.log(colours.greenBright(`Photographer: ${options.photographer}`));
-}
-
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET);
 const s3 = new AWS.S3({
 	credentials: {
@@ -50,6 +31,38 @@ const s3 = new AWS.S3({
 	s3ForcePathStyle: true,
 	signatureVersion: 'v4',
 });
+
+program
+	.option('-c, --category <name>', 'image category')
+	.option('-l, --location <name>', 'fallback location name (if not in EXIF)')
+	.option('-p, --photographer <name>', 'photographer name');
+program.parse(process.argv);
+const options = program.opts();
+
+
+let { data: categories } = await supabase.rpc('get_image_categories');
+categories = categories.map(row => row.name);
+
+options.category = options.category?.toLowerCase() || undefined;
+if (!options.category) {
+	console.log(colours.yellowBright('Warning: no category; all images must have a category to be selected; only use an undefined category if you are updating existing images'));
+	console.log(colours.blueBright(`Existing categories: ${categories.join(', ')}`));
+} else if (!categories.includes(options.category)) {
+	console.log(colours.yellowBright(`Warning: ${options.category} is not an existing category (but will be created if you continue)`));
+	console.log(colours.blueBright(`Existing categories: ${categories.join(', ')}`));
+} else {
+	console.log(colours.greenBright(`Category: ${options.category}`));
+}
+
+if (!options.location) console.log(colours.yellowBright('Warning: no fallback location'));
+else console.log(colours.greenBright(`Fallback location: ${options.location}`));
+
+if (!options.photographer) {
+	console.log(colours.redBright('Error: no photographer'));
+	process.exit(1);
+} else {
+	console.log(colours.greenBright(`Photographer: ${options.photographer}`));
+}
 
 const resolutions = {
 	hd: [null, 720],
