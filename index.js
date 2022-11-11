@@ -176,35 +176,35 @@ for (const file of files) {
 	spin.update('files', { text: `Processing ${file}` });
 	spin.add('file', { text: `Creating ${file} variants` });
 
-	// const variants = {};
+	const variants = {};
 
-	// for (const format of formats) {
-	// 	spin.update('file', { text: `Encoding ${file} to ${format.toUpperCase()}` });
-	// 	const encoded = await sharp(buffer).toFormat(format).toBuffer();
-	// 	for (const [name, dimensions] of Object.entries(resolutions)) {
-	// 		spin.update('file', { text: `Resizing ${file} (${format.toUpperCase() }) to ${name.toUpperCase()}` });
-	// 		let buffer = encoded;
-	// 		if (dimensions) buffer = await sharp(encoded).resize(dimensions[0], dimensions[1]).toBuffer();
-	// 		variants[`img/${name}/${checksum}.${format}`] = buffer;
-	// 	}
-	// }
+	for (const format of formats) {
+		spin.update('file', { text: `Encoding ${file} to ${format.toUpperCase()}` });
+		const encoded = await sharp(buffer).toFormat(format).toBuffer();
+		for (const [name, dimensions] of Object.entries(resolutions)) {
+			spin.update('file', { text: `Resizing ${file} (${format.toUpperCase() }) to ${name.toUpperCase()}` });
+			let buffer = encoded;
+			if (dimensions) buffer = await sharp(encoded).resize(dimensions[0], dimensions[1]).toBuffer();
+			variants[`img/${name}/${checksum}.${format}`] = buffer;
+		}
+	}
 
-	// for (const variant in variants) {
-	// 	spin.update('file', { text: `Uploading ${variant} (${prettyBytes(Buffer.byteLength(variants[variant]))})` });
-	// 	try {
-	// 		await s3.upload(
-	// 			{
-	// 				ACL: 'public-read',
-	// 				Body: variants[variant],
-	// 				Bucket: process.env.S3_BUCKET,
-	// 				Key: variant,
-	// 			},
-	// 		).promise();
-	// 	} catch (error) {
-	// 		spin.fail('file', { text: spin.pick('file').text + ':\n' + error });
-	// 		continue files; // don't add to database if a variant fails to upload
-	// 	}
-	// }
+	for (const variant in variants) {
+		spin.update('file', { text: `Uploading ${variant} (${prettyBytes(Buffer.byteLength(variants[variant]))})` });
+		try {
+			await s3.upload(
+				{
+					ACL: 'public-read',
+					Body: variants[variant],
+					Bucket: process.env.S3_BUCKET,
+					Key: variant,
+				},
+			).promise();
+		} catch (error) {
+			spin.fail('file', { text: spin.pick('file').text + ':\n' + error });
+			continue files; // don't add to database if a variant fails to upload
+		}
+	}
 
 	try {
 		spin.update('file', { text: `Upserting ${file} into database` });
