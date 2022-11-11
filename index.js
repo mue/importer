@@ -39,7 +39,6 @@ program
 program.parse(process.argv);
 const options = program.opts();
 
-
 let { data: categories } = await supabase.rpc('get_image_categories');
 categories = categories.map(row => row.name);
 
@@ -146,9 +145,10 @@ for (const file of files) {
 		created_at: exif.Exif[piexif.ExifIFD.DateTimeOriginal],
 		id: checksum,
 		location_data: null,
-		// location_name: options.location,
+		location_name: options.location,
 		original_file_name: file,
 		photographer: options.photographer,
+		version: Math.floor(Date.now() / 1000),
 	};
 
 	if (exif['0th'][piexif.ImageIFD.Model] && android[data.camera]) data.camera = exif['0th'][piexif.ImageIFD.Model];
