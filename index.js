@@ -15,7 +15,9 @@ import ms from 'ms';
 import { createHash } from 'crypto';
 import piexif from 'piexifjs';
 import sharp from 'sharp';
+import { get as getImageData } from '@andreekeberg/imagedata';
 import prettyBytes from 'pretty-bytes';
+import { encode } from 'blurhash';
 
 config();
 
@@ -133,12 +135,26 @@ for (const file of files) {
 	spin.add('files', { text: `Reading ${file}` });
 	const path = resolve('import', file);
 	let buffer = await fsp.readFile(path);
+	const { size } = await sharp(buffer).metadata();
+	const { dominant } = await sharp(buffer).stats();
 	const binary = buffer.toString('binary');
 	const exif = piexif.load(binary);
 	buffer = Buffer.from(piexif.remove(binary), 'binary'); // same as `buffer` but without metadata
 	const checksum = createHash('md5').update(buffer).digest('hex'); // checksum of the **meta-stripped** file
-	const { dominant } = await sharp(buffer).stats();
+
+	spin.update('files', { text: `Processing ${file}` });
+	spin.add('file', { text: 'Getting ImageData' });
+	const thumb = await sharp(buffer).resize(null, 720).toBuffer();
+	const imageData = await new Promise((resolve, reject) => {
+		getImageData(thumb, (error, data) => {
+			if (error) reject(error);
+			else resolve(data);
+		});
+	});
+	spin.update('file', { text: 'Generating blur hash' });
+
 	const data = {
+		blur_hash: encode(imageData.data, imageData.width, imageData.height, 4, 4),
 		camera: null,
 		category: options.category?.toLowerCase(),
 		colour: '#' + Object.values(dominant).map(n => ('0' + parseInt(n).toString(16)).slice(-2)).join(''),
@@ -174,7 +190,7 @@ for (const file of files) {
 		if (gpsCache.has(data.location_data)) {
 			data.location_name = gpsCache.get(data.location_data);
 		} else {
-			spin.add('file', { text: `Fetching location of ${file}` });
+			spin.update('file', { text: `Fetching location of ${file}` });
 			try {
 				const res = await fetch(`https://api.muetab.com/v2/gps?lat=${decimalLatitude}&lon=${decimalLongitude}`);
 				const json = await res.json();
@@ -186,7 +202,6 @@ for (const file of files) {
 		}
 	}
 
-	spin.update('files', { text: `Processing ${file}` });
 	spin.add('file', { text: `Creating ${file} variants` });
 
 	const variants = {};
@@ -195,15 +210,16 @@ for (const file of files) {
 		spin.update('file', { text: `Encoding ${file} to ${format.toUpperCase()}` });
 		const encoded = await sharp(buffer).toFormat(format).toBuffer();
 		for (const [name, dimensions] of Object.entries(resolutions)) {
-			spin.update('file', { text: `Resizing ${file} (${format.toUpperCase() }) to ${name.toUpperCase()}` });
-			let buffer = encoded;
-			if (dimensions) buffer = await sharp(encoded).resize(dimensions[0], dimensions[1]).toBuffer();
-			variants[`img/${name}/${checksum}.${format}`] = buffer;
+			spin.update('file', { text: `Resizing ${file} (${format.toUpperCase()}) to ${name.toUpperCase()}` });
+			let resized = encoded;
+			if (dimensions) resized = await sharp(encoded).resize(dimensions[0], dimensions[1]).toBuffer();
+			variants[`img/${name}/${checksum}.${format}`] = resized;
 		}
 	}
 
 	for (const variant in variants) {
-		spin.update('file', { text: `Uploading ${variant} (${prettyBytes(Buffer.byteLength(variants[variant]))})` });
+		const size2 = Buffer.byteLength(variants[variant]);
+		spin.update('file', { text: `Uploading ${variant} (${prettyBytes(size2)}, ${Math.round(((size - size2) / size) * 100)}% smaller)` });
 		try {
 			await s3.upload(
 				{
