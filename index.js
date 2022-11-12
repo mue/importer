@@ -255,3 +255,5 @@ for (const file of files) {
 clearInterval(spinInterval);
 spin.succeed('main', { text: `Importing images (${files.length}/${files.length}, 100.00%) ${ms(Date.now() - startTime)}` });
 spin.stopAll();
+console.log('\n');
+console.log('\x07' + colours.redBright('Exiting.'));
