@@ -226,7 +226,7 @@ for (const file of files) {
 					ACL: 'public-read',
 					Body: variants[variant],
 					Bucket: process.env.S3_BUCKET,
-					CacheControl: 'public, max-age=604800, s-max-age=31536000, stale-while-revalidate=86400, immutable',
+					CacheControl: 'public, max-age=2592000, s-max-age=31536000, stale-while-revalidate=604800, immutable',
 					ContentMD5: createHash('md5').update(variants[variant]).digest('base64'),
 					ContentType: 'image/' + variant.split('.').pop(),
 					Key: variant,
