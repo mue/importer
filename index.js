@@ -183,9 +183,9 @@ for (const file of files) {
 
 	if (latitude && longitude) {
 		// convert & reduce precision
-		const decimalLatitude = (latitudeRef === 'N' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(latitude).toFixed(1);
-		const decimalLongitude = (longitudeRef === 'E' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(longitude).toFixed(1);
-		data.location_data = `${decimalLatitude},${decimalLongitude}`;
+		const decimalLatitude = (latitudeRef === 'N' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(latitude);
+		const decimalLongitude = (longitudeRef === 'E' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(longitude);
+		data.location_data = [decimalLatitude.toFixed(1), decimalLongitude.toFixed(1)].join(',');
 
 		if (gpsCache.has(data.location_data)) {
 			data.location_name = gpsCache.get(data.location_data);
