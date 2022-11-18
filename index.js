@@ -192,7 +192,7 @@ for (const file of files) {
 		} else {
 			spin.update('file', { text: `Fetching location of ${file}` });
 			try {
-				const res = await fetch(`https://api.muetab.com/v2/gps?lat=${decimalLatitude}&lon=${decimalLongitude}`);
+				const res = await fetch(`https://api.muetab.com/v2/gps?latitude=${decimalLatitude}&longitude=${decimalLongitude}`);
 				const json = await res.json();
 				if (json[0]) data.location_name = `${json[0].name}, ${json[0].state}`;
 				spin.succeed('file');
