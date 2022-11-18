@@ -32,6 +32,12 @@ Options:
   -h, --help                 display help for command
 ```
 
+> **Note**
+>
+> If you're relying on the location name being determined from EXIF GPS coordinates,
+> check the results in database when the images have been uploaded.
+
+
 You must sort the images you want to import into photo sets.
 You can only upload one photo set at a time.
 
