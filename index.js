@@ -185,7 +185,7 @@ for (const file of files) {
 		// convert & reduce precision
 		const decimalLatitude = (latitudeRef === 'N' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(latitude);
 		const decimalLongitude = (longitudeRef === 'E' ? 1 : -1) * piexif.GPSHelper.dmsRationalToDeg(longitude);
-		data.location_data = [decimalLatitude.toFixed(1), decimalLongitude.toFixed(1)].join(',');
+		data.location_data = [decimalLatitude.toFixed(2), decimalLongitude.toFixed(2)].join(',');
 
 		if (gpsCache.has(data.location_data)) {
 			data.location_name = gpsCache.get(data.location_data);
